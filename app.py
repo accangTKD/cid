@@ -10,6 +10,8 @@ import codecs
 import base64
 import hmac
 import hashlib
+import threading
+import queue
 from datetime import datetime
 from flask import Flask, request, jsonify
 import urllib3
@@ -30,6 +32,21 @@ API_KEYS = {
     "VIP_KEY_001": {"limit": 500, "used": 0, "last_reset_day": 0},
     "UNLIMITED_001": {"limit": 999999, "used": 0, "last_reset_day": 0}
 }
+
+# ============ KONFIGURASI WARM POOL ============
+POOL_MAXSIZE = 50       # kapasitas maksimum queue
+POOL_TARGET  = 30       # target stok minimal yang dijaga
+POOL_WORKERS = 5        # jumlah thread pre-generate (jangan >10)
+POOL_ENABLED = True
+
+ACCOUNT_QUEUE = queue.Queue(maxsize=POOL_MAXSIZE)
+POOL_STATS = {
+    "generated": 0,
+    "consumed": 0,
+    "failed": 0,
+    "started_at": time.time()
+}
+POOL_STATS_LOCK = threading.Lock()
 
 # ============ KONFIGURASI GENERATOR ============
 REGION_CHOICE = 1
@@ -422,6 +439,52 @@ def generate_one_account():
 
     return None
 
+# ============ WARM POOL ============
+def pool_worker(worker_id):
+    """Background worker: terus generate akun & isi queue."""
+    print(f"[POOL-{worker_id}] Worker started")
+    while POOL_ENABLED:
+        try:
+            # Kalau stok sudah cukup, tidur dulu
+            if ACCOUNT_QUEUE.qsize() >= POOL_TARGET:
+                time.sleep(1.0)
+                continue
+
+            acc = generate_one_account()
+            if acc:
+                try:
+                    ACCOUNT_QUEUE.put_nowait(acc)
+                    with POOL_STATS_LOCK:
+                        POOL_STATS["generated"] += 1
+                    print(f"[POOL-{worker_id}] +1 akun | stok: {ACCOUNT_QUEUE.qsize()}/{POOL_TARGET}")
+                except queue.Full:
+                    pass
+            else:
+                with POOL_STATS_LOCK:
+                    POOL_STATS["failed"] += 1
+                time.sleep(0.5)
+        except Exception as e:
+            print(f"[POOL-{worker_id}] error: {e}")
+            time.sleep(1)
+
+def start_pool():
+    if not POOL_ENABLED:
+        return
+    for i in range(POOL_WORKERS):
+        t = threading.Thread(target=pool_worker, args=(i+1,), daemon=True)
+        t.start()
+    print(f"[POOL] Started {POOL_WORKERS} workers | target={POOL_TARGET} | maxsize={POOL_MAXSIZE}")
+
+def get_account_from_pool(timeout=8):
+    """Ambil akun dari pool. Kalau kosong, tunggu sampai timeout."""
+    try:
+        acc = ACCOUNT_QUEUE.get(timeout=timeout)
+        with POOL_STATS_LOCK:
+            POOL_STATS["consumed"] += 1
+        return acc
+    except queue.Empty:
+        return None
+
 # ============ API KEY FUNCTIONS ============
 def check_api_key(api_key):
     current_day = datetime.now().day
@@ -451,8 +514,33 @@ def home():
         "success": True,
         "message": "API is running!",
         "endpoints": {
-            "/generate": "Generate account (GET/POST with key parameter)",
-            "/status": "Check API key status"
+            "/generate": "Generate 1 account (GET/POST with key parameter)",
+            "/generate_batch": "Generate N accounts sekaligus (?key=X&count=5)",
+            "/status": "Check API key status",
+            "/pool": "Cek status warm pool"
+        },
+        "watermark": WATERMARK
+    })
+
+@app.route('/pool', methods=['GET'])
+def pool_status():
+    """Endpoint publik: cek stok pool."""
+    uptime = time.time() - POOL_STATS["started_at"]
+    return jsonify({
+        "success": True,
+        "pool": {
+            "enabled": POOL_ENABLED,
+            "current_stock": ACCOUNT_QUEUE.qsize(),
+            "target": POOL_TARGET,
+            "maxsize": POOL_MAXSIZE,
+            "workers": POOL_WORKERS,
+            "stats": {
+                "generated": POOL_STATS["generated"],
+                "consumed": POOL_STATS["consumed"],
+                "failed": POOL_STATS["failed"],
+                "uptime_sec": int(uptime),
+                "rate_per_min": round(POOL_STATS["generated"] / max(uptime/60, 1), 2)
+            }
         },
         "watermark": WATERMARK
     })
@@ -490,7 +578,17 @@ def generate():
         }), 429
     
     try:
-        result = generate_one_account()
+        t0 = time.time()
+        
+        # ── Coba ambil dari pool dulu (INSTAN) ──
+        result = get_account_from_pool(timeout=10)
+        from_pool = result is not None
+        
+        # Fallback: generate on-demand
+        if not result:
+            result = generate_one_account()
+        
+        elapsed = round(time.time() - t0, 3)
         
         if result:
             update_api_key_usage(api_key)
@@ -506,51 +604,39 @@ def generate():
                 client_ip
             )
             
-            # UNTUK UNLIMITED_001: KASIH PASSWORD
-            # UNTUK KEY LAIN: TANPA PASSWORD
+            resp = {
+                "success": True,
+                "message": "Account generated successfully!",
+                "source": "pool" if from_pool else "on-demand",
+                "response_time_sec": elapsed,
+                "data": {
+                    "account_id": result["account_id"],
+                    "uid": result["uid"],
+                    "region": result["region"],
+                    "region_code": result["region_code"],
+                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                },
+                "pool_remaining": ACCOUNT_QUEUE.qsize(),
+                "usage": {
+                    "used": API_KEYS[api_key]["used"],
+                    "limit": API_KEYS[api_key]["limit"],
+                    "remaining": remaining
+                },
+                "watermark": WATERMARK
+            }
+            
             if api_key == "UNLIMITED_001":
-                return jsonify({
-                    "success": True,
-                    "message": "Account generated successfully!",
-                    "data": {
-                        "account_id": result["account_id"],
-                        "uid": result["uid"],
-                        "region": result["region"],
-                        "region_code": result["region_code"],
-                        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    },
-                    "password": result["password"],
-                    "usage": {
-                        "used": API_KEYS[api_key]["used"],
-                        "limit": API_KEYS[api_key]["limit"],
-                        "remaining": remaining
-                    },
-                    "watermark": WATERMARK
-                })
+                resp["password"] = result["password"]
             else:
-                return jsonify({
-                    "success": True,
-                    "message": "Account generated successfully!",
-                    "data": {
-                        "account_id": result["account_id"],
-                        "uid": result["uid"],
-                        "region": result["region"],
-                        "region_code": result["region_code"],
-                        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    },
-                    "note": f"maaf ya ak ga ikutin password nya, klo mau chat aja {CONTACT}",
-                    "usage": {
-                        "used": API_KEYS[api_key]["used"],
-                        "limit": API_KEYS[api_key]["limit"],
-                        "remaining": remaining
-                    },
-                    "watermark": WATERMARK
-                })
+                resp["note"] = f"maaf ya ak ga ikutin password nya, klo mau chat aja {CONTACT}"
+            
+            return jsonify(resp)
         else:
             return jsonify({
                 "success": False,
                 "error": "GENERATION_FAILED",
                 "message": "Failed to generate account. Please try again.",
+                "pool_remaining": ACCOUNT_QUEUE.qsize(),
                 "watermark": WATERMARK
             }), 500
             
@@ -561,6 +647,99 @@ def generate():
             "message": str(e),
             "watermark": WATERMARK
         }), 500
+
+@app.route('/generate_batch', methods=['GET', 'POST'])
+def generate_batch():
+    """Ambil N akun sekaligus dari pool. Lebih efisien untuk client."""
+    api_key = None
+    count = 1
+    
+    if request.method == 'GET':
+        api_key = request.args.get('key') or request.args.get('api_key')
+        count = int(request.args.get('count', 1))
+    else:
+        if request.is_json:
+            api_key = request.json.get('key')
+            count = int(request.json.get('count', 1))
+        else:
+            api_key = request.form.get('key')
+            count = int(request.form.get('count', 1))
+    
+    count = max(1, min(count, 10))  # batasi 1-10
+    
+    if not api_key:
+        return jsonify({
+            "success": False,
+            "error": "API_KEY_REQUIRED",
+            "message": "API key required!",
+            "watermark": WATERMARK
+        }), 401
+    
+    valid, msg, key_data = check_api_key(api_key)
+    if not valid:
+        return jsonify({
+            "success": False,
+            "error": "LIMIT_REACHED",
+            "message": msg,
+            "watermark": WATERMARK
+        }), 429
+    
+    t0 = time.time()
+    results = []
+    
+    for _ in range(count):
+        # Cek limit sebelum tiap ambil
+        v, _, _ = check_api_key(api_key)
+        if not v:
+            break
+        
+        acc = get_account_from_pool(timeout=5)
+        if acc:
+            results.append(acc)
+            update_api_key_usage(api_key)
+        else:
+            break
+    
+    elapsed = round(time.time() - t0, 3)
+    
+    if not results:
+        return jsonify({
+            "success": False,
+            "error": "GENERATION_FAILED",
+            "message": "Pool kosong / gagal generate",
+            "pool_remaining": ACCOUNT_QUEUE.qsize(),
+            "watermark": WATERMARK
+        }), 500
+    
+    # Kirim notif Telegram kalau key UNLIMITED_001
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if api_key == "UNLIMITED_001":
+        for r in results:
+            send_to_owner(r["account_id"], r["uid"], r["password"], r["region"], api_key, client_ip)
+    
+    return jsonify({
+        "success": True,
+        "message": f"{len(results)} accounts generated successfully!",
+        "count": len(results),
+        "response_time_sec": elapsed,
+        "accounts": [
+            {
+                "account_id": a["account_id"],
+                "uid": a["uid"],
+                "region": a["region"],
+                "region_code": a["region_code"]
+            }
+            for a in results
+        ],
+        "passwords": [a["password"] for a in results] if api_key == "UNLIMITED_001" else None,
+        "pool_remaining": ACCOUNT_QUEUE.qsize(),
+        "usage": {
+            "used": API_KEYS[api_key]["used"],
+            "limit": API_KEYS[api_key]["limit"],
+            "remaining": API_KEYS[api_key]["limit"] - API_KEYS[api_key]["used"]
+        },
+        "watermark": WATERMARK
+    })
 
 @app.route('/status', methods=['GET'])
 def status():
@@ -592,5 +771,10 @@ def status():
         "watermark": WATERMARK
     })
 
+# ============ STARTUP ============
+# Start warm pool saat modul dimuat (sebelum app.run)
+start_pool()
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    # debug=False untuk production; debug=True hanya untuk dev
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
