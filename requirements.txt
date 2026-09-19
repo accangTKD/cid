@@ -1,4 +1,7 @@
 Flask
+Flask-Cors
 requests
+httpx
 pycryptodome
+protobuf==4.25.1
 urllib3
