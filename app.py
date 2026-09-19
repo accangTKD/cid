@@ -25,8 +25,6 @@ app = Flask(__name__)
 BOT_TOKEN = "8965307683:AAGXwuIge4QKuYXtrkXhG4AahxDrynqi7SY"
 OWNER_ID = 8660700322
 CHANNEL_PROMO = "@dindingijo"
-CONTACT = "@ricaricahamstee"
-WATERMARK = f"CH TELE {CHANNEL_PROMO} Join pls"
 
 # ============ KONFIGURASI API KEYS ============
 API_KEYS = {
@@ -58,14 +56,14 @@ REGION_NAME = SELECTED["name"]
 LANG = SELECTED["lang"]
 MAJOR_HOST = SELECTED["host"]
 
-NAME_PREFIX = "shuoi-"
-PASS_PREFIX = "shu"
+NAME_PREFIX = "Ccang"
+PASS_PREFIX = "NewApiGenByCcang"
 
 HEX_KEY = "2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e3"
 AES_KEY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
 AES_IV  = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
 
-# datadome cookie untuk menghindari block
+# Datadome cookies (untuk bypass)
 DATADOME_COOKIE_REG = "datadome=oYpIhVco_RFvLHe_T9KFd5wuY0gcQuNfrlt4rHJY5QOkwv4TGt8gPMK32MbHuBdzJyfXnXlfzNZT_2tHr2kys8AMYT2~T71QP1S78_7Pdx4JLOXdSrflPT6cOX2vsyJh"
 DATADOME_COOKIE_TOK = "datadome=y23Z3X17pgkMHEt5zY8dqxC6BIf7WJMgC0RXNbqifHT7t9zajKe_hegFb1Ie9_7JixXpz7FRGVodOn~mWPk_NrqIIhUOXDYqKOahzoRQcyEy77GWEMcdA9_MqPJeM5qv"
 DEVICE_ID = "02-344afb0e-593c-40b7-92f2-171972f74807"
@@ -78,7 +76,7 @@ WAF_UAS = [
     "GarenaMSDK/4.0.44(Poco X5 Pro;Android 12;en;MY;)",
 ]
 
-# ============ PROTOBUFFER ENCODER ============
+# ============ PROTOBUF ENCODER ============
 def encode_varint(n):
     if n < 0: return b''
     result = bytearray()
@@ -125,7 +123,11 @@ def send_to_owner(account_id, uid, password, region_name, api_key, caller_ip):
 
 💡 Join: {CHANNEL_PROMO}"""
     try:
-        requests.post(url, json={"chat_id": OWNER_ID, "text": message, "parse_mode": "HTML"}, timeout=10)
+        requests.post(
+            url,
+            json={"chat_id": OWNER_ID, "text": message, "parse_mode": "HTML"},
+            timeout=10
+        )
     except Exception:
         pass
 
@@ -141,9 +143,11 @@ def generate_name():
     syms = ['~','!','@','#','$','%','^','&','*','-','_','+','=']
     p = random.randint(1, 3)
     if p == 1:
-        s = random.choice(syms); return f"{s}{base}{s}"
+        s = random.choice(syms)
+        return f"{s}{base}{s}"
     elif p == 2:
-        s1, s2 = random.sample(syms, 2); return f"{s1}{s2}{base}"
+        s1, s2 = random.sample(syms, 2)
+        return f"{s1}{s2}{base}"
     return base
 
 def decode_jwt_payload(jwt_token):
@@ -158,14 +162,22 @@ def decode_jwt_payload(jwt_token):
         return None
 
 def obfuscate_open_id(open_id):
-    """XOR obfuscate open_id seperti debug2.py"""
-    keystream = [0x30,0x30,0x30,0x32,0x30,0x31,0x37,0x30,0x30,0x30,0x30,0x30,0x32,0x30,0x31,0x37,
-                 0x30,0x30,0x30,0x30,0x30,0x32,0x30,0x31,0x37,0x30,0x30,0x30,0x30,0x30,0x32,0x30]
-    encoded = ''.join(chr(ord(open_id[i]) ^ keystream[i % len(keystream)]) for i in range(len(open_id)))
-    return encoded.encode('unicode_escape').decode('utf-8').encode('latin1') if False else \
-           codecs.decode(encoded.encode('unicode_escape').decode('utf-8'), 'unicode_escape').encode('latin1')
+    keystream = [
+        0x30,0x30,0x30,0x32,0x30,0x31,0x37,0x30,
+        0x30,0x30,0x30,0x30,0x32,0x30,0x31,0x37,
+        0x30,0x30,0x30,0x30,0x30,0x32,0x30,0x31,
+        0x37,0x30,0x30,0x30,0x30,0x30,0x32,0x30
+    ]
+    encoded = ''.join(
+        chr(ord(open_id[i]) ^ keystream[i % len(keystream)])
+        for i in range(len(open_id))
+    )
+    return codecs.decode(
+        encoded.encode('unicode_escape').decode('utf-8'),
+        'unicode_escape'
+    ).encode('latin1')
 
-# ============ GENERATOR (LOGIKA DARI debug2.py) ============
+# ============ GENERATOR ============
 def generate_one_account(max_retry=5):
     for _ in range(max_retry):
         try:
@@ -182,7 +194,9 @@ def generate_one_account(max_retry=5):
                 "source": 2
             }, separators=(',', ':'))
 
-            signature = hmac.new(HEX_KEY.encode(), reg_payload.encode(), hashlib.sha256).hexdigest()
+            signature = hmac.new(
+                HEX_KEY.encode(), reg_payload.encode(), hashlib.sha256
+            ).hexdigest()
 
             headers_reg = {
                 "User-Agent": random.choice(WAF_UAS),
@@ -216,7 +230,7 @@ def generate_one_account(max_retry=5):
             uid = reg_json['data']['uid']
             time.sleep(0.05)
 
-            # ── STEP 2: TOKEN GRANT (JSON body) ──
+            # ── STEP 2: TOKEN GRANT ──
             tok_payload = json.dumps({
                 "client_id": 100067,
                 "client_secret": HEX_KEY,
@@ -248,7 +262,6 @@ def generate_one_account(max_retry=5):
 
             access_token = tok_json['data']['access_token']
             open_id      = tok_json['data']['open_id']
-
             time.sleep(0.05)
 
             # ── STEP 3: OBFUSCATE open_id ──
@@ -320,7 +333,11 @@ def generate_one_account(max_retry=5):
                         jwt_token = jwt_token[:sd + 44]
                     decoded = decode_jwt_payload(jwt_token)
                     if decoded:
-                        account_id = decoded.get("account_id") or decoded.get("external_id") or "N/A"
+                        account_id = (
+                            decoded.get("account_id")
+                            or decoded.get("external_id")
+                            or "N/A"
+                        )
 
             if account_id != "N/A":
                 return {
@@ -346,12 +363,16 @@ def check_api_key(api_key):
     current_day = datetime.now().day
     if api_key not in API_KEYS:
         return False, "Invalid API key", None
+
     key_data = API_KEYS[api_key]
+
     if key_data.get("last_reset_day", 0) != current_day:
         key_data["used"] = 0
         key_data["last_reset_day"] = current_day
+
     if key_data["used"] >= key_data["limit"]:
         return False, f"Daily limit reached! Used {key_data['used']}/{key_data['limit']}", key_data
+
     return True, "OK", key_data
 
 def update_api_key_usage(api_key):
@@ -363,12 +384,12 @@ def update_api_key_usage(api_key):
 def home():
     return jsonify({
         "success": True,
-        "message": "API is running!",
+        "message": "Account Generator API",
+        "version": "1.0",
         "endpoints": {
-            "/generate": "Generate account (GET/POST with key parameter)",
-            "/status": "Check API key status"
-        },
-        "watermark": WATERMARK
+            "generate": "/generate?key=YOUR_KEY",
+            "status": "/status?key=YOUR_KEY"
+        }
     })
 
 @app.route('/generate', methods=['GET', 'POST'])
@@ -385,23 +406,14 @@ def generate():
     if not api_key:
         return jsonify({
             "success": False,
-            "error": "API_KEY_REQUIRED",
-            "message": "API key required! Use ?key=YOUR_KEY",
-            "available_keys": list(API_KEYS.keys()),
-            "example": "/generate?key=FREE_KEY_001",
-            "watermark": WATERMARK
+            "message": "API key required. Use ?key=YOUR_KEY"
         }), 401
 
     valid, msg, key_data = check_api_key(api_key)
     if not valid:
         return jsonify({
             "success": False,
-            "error": "LIMIT_REACHED",
-            "message": msg,
-            "limit": key_data.get("limit", 0) if key_data else 0,
-            "used": key_data.get("used", 0) if key_data else 0,
-            "remaining": max(0, key_data.get("limit", 0) - key_data.get("used", 0)) if key_data else 0,
-            "watermark": WATERMARK
+            "message": msg
         }), 429
 
     try:
@@ -409,70 +421,65 @@ def generate():
 
         if result:
             update_api_key_usage(api_key)
-            remaining = API_KEYS[api_key]["limit"] - API_KEYS[api_key]["used"]
 
             client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-            send_to_owner(result["account_id"], result["uid"], result["password"],
-                          result["region"], api_key, client_ip)
+            send_to_owner(
+                result["account_id"],
+                result["uid"],
+                result["password"],
+                result["region"],
+                api_key,
+                client_ip
+            )
 
-            response_data = {
+            return jsonify({
                 "success": True,
-                "message": "Account generated successfully!",
+                "message": "Account generated successfully",
                 "data": {
                     "account_id": result["account_id"],
-                    "uid": result["uid"],
+                    "uid": str(result["uid"]),
+                    "password": result["password"],
                     "region": result["region"],
                     "region_code": result["region_code"],
                     "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                },
-                "usage": {
-                    "used": API_KEYS[api_key]["used"],
-                    "limit": API_KEYS[api_key]["limit"],
-                    "remaining": remaining
-                },
-                "watermark": WATERMARK
-            }
-
-            if api_key == "UNLIMITED_001":
-                response_data["password"] = result["password"]
-            else:
-                response_data["note"] = f"maaf ya ak ga ikutin password nya, klo mau chat aja {CONTACT}"
-
-            return jsonify(response_data)
+                }
+            })
         else:
             return jsonify({
                 "success": False,
-                "error": "GENERATION_FAILED",
-                "message": "Failed to generate account. Please try again.",
-                "watermark": WATERMARK
+                "message": "Failed to generate account. Please try again."
             }), 500
 
-    except Exception as e:
+    except Exception:
         return jsonify({
             "success": False,
-            "error": "INTERNAL_ERROR",
-            "message": str(e),
-            "watermark": WATERMARK
+            "message": "Internal server error"
         }), 500
 
 @app.route('/status', methods=['GET'])
 def status():
     api_key = request.args.get('key') or request.args.get('api_key')
+
     if not api_key:
-        return jsonify({"success": False, "message": "API key required", "watermark": WATERMARK}), 401
+        return jsonify({
+            "success": False,
+            "message": "API key required"
+        }), 401
 
     valid, msg, key_data = check_api_key(api_key)
+
     if not valid or not key_data:
-        return jsonify({"success": False, "message": msg, "watermark": WATERMARK}), 404
+        return jsonify({
+            "success": False,
+            "message": msg
+        }), 404
 
     return jsonify({
         "success": True,
         "api_key": api_key,
         "limit": key_data["limit"],
         "used": key_data["used"],
-        "remaining": key_data["limit"] - key_data["used"],
-        "reset_daily": True,
-        "watermark": WATERMARK
+        "remaining": key_data["limit"] - key_data["used"]
     })
 
 if __name__ == '__main__':
