@@ -1,4 +1,4 @@
-# app.py — FULL WORK
+# app.py — FULL WORK (generate + info)
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -20,6 +20,16 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+
+# ── protobuf (kalau file pb2 tersedia) ────────────────────────────────
+try:
+    from google.protobuf import json_format
+    import FreeFire_pb2
+    import AccountPersonalShow_pb2
+    import main_pb2
+    PB2_OK = True
+except Exception:
+    PB2_OK = False
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -74,6 +84,9 @@ COOKIE_TOK = (
 AES_KEY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
 AES_IV  = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
 
+MAIN_KEY = b'Yg&tc%DEuh6%Zc^8'
+MAIN_IV  = b'6oyZDr22E3ychjM%'
+
 REG_URL   = "https://100067.connect.garena.com/api/v2/oauth/guest:register"
 TOKEN_URL = "https://100067.connect.garena.com/api/v2/oauth/guest/token:grant"
 MAJOR_REGISTER_URL = f"https://{HOST_REG}/MajorRegister"
@@ -92,11 +105,21 @@ USER_AGENTS = [
     "BestHTTP/2 v2.4.0",
 ]
 
+USERAGENT_INFO = "Dalvik/2.1.0 (Linux; U; Android 14; CPH2095 Build/RKQ1.211119.001)"
+RELEASEVERSION = "OB55"
+
 MAX_RETRIES     = 3
 RETRY_DELAY     = 1
 RATE_LIMIT_WAIT = 30
 
-# ============ KARAKTER UNICODE (VN / KR / CN / JP / TH) ============
+# akun internal untuk cache JWT info
+JWT_ACCOUNT = {
+    "uid": "7742406516",
+    "password": "507D3250C779A4E73A74B66998E99DD4ED95A6133A07151FC0411A225C405ADD"
+}
+_token_cache = {}
+
+# ============ KARAKTER UNICODE ============
 CHARS_VN = list("ăâđêôơưĂÂĐÊÔƠƯáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệ"
                 "íìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ")
 CHARS_KR = list("가나다라마바사아자차카타파하고노도로모보소오조초코토포호"
@@ -112,7 +135,7 @@ ALL_GROUPS  = list(CHAR_GROUPS.values())
 ALL_CHARS   = CHARS_VN + CHARS_KR + CHARS_CN + CHARS_JP + CHARS_TH
 
 
-# ============ NAME GENERATOR (Ccang + unicode, 7-11 code-point) ============
+# ============ NAME / PASSWORD ============
 def make_name() -> str:
     CORE = "Ccang"
     target_total = random.randint(7, 11)
@@ -158,6 +181,10 @@ def random_username() -> str:
 # ============ AES & HMAC ============
 def aes_encrypt(data: bytes) -> bytes:
     return AES.new(AES_KEY, AES.MODE_CBC, AES_IV).encrypt(pad(data, AES.block_size))
+
+
+def aes_cbc_encrypt(key: bytes, iv: bytes, plaintext: bytes) -> bytes:
+    return AES.new(key, AES.MODE_CBC, iv).encrypt(pad(plaintext, AES.block_size))
 
 
 def make_signature(payload: str) -> str:
@@ -255,7 +282,7 @@ def random_ip() -> str:
     return f"{random.randint(1,255)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,255)}"
 
 
-# ============ GUEST REGISTER + TOKEN GRANT ============
+# ============ GUEST REGISTER + TOKEN ============
 def create_guest_account(max_retries: int = MAX_RETRIES):
     for _ in range(max_retries):
         try:
@@ -335,7 +362,7 @@ def create_guest_account(max_retries: int = MAX_RETRIES):
 
 # ============ MAJOR REGISTER ============
 FIELD_22_HEX = (
-    "474752450101010062020000a78910bd098e3ff2e4345d59a31db114ea088f37e32e65"
+    "474752450101010062000000a78910bd098e3ff2e4345d59a31db114ea088f37e32e65"
     "212ff96621793d9eb78720d0bf2ac95176569765247ada5eb01376b3b9931794a4946"
     "d76ef8890779f3f2129317e6e1cb2fdcf7b06247cea343b8d4f167eff85a2e1dfe99"
     "b4583a7e1a155dbe7f7f85cff3b223eb77222ec1228f3ee1ef6ce7f8ca24b00a554"
@@ -524,7 +551,7 @@ def major_login(session, access_token, open_id):
     return None, None
 
 
-# ============ ORKESTRASI ============
+# ============ ORKESTRASI GENERATE ============
 def generate_one_account(max_attempts: int = 10):
     for _ in range(max_attempts):
         try:
@@ -568,6 +595,283 @@ def generate_one_account(max_attempts: int = 10):
         except Exception:
             time.sleep(RETRY_DELAY)
     return None
+
+
+# ============ INFO ACCOUNT (pakai JWT internal) ============
+def get_access_token(account: str):
+    url = "https://ffmconnect.live.gop.garenanow.com/oauth/guest/token/grant"
+    payload = (
+        account
+        + "&response_type=token&client_type=2"
+        + f"&client_secret={AUTH_SECRET}"
+        + "&client_id=100067"
+    )
+    headers = {
+        "User-Agent": USERAGENT_INFO,
+        "Connection": "Keep-Alive",
+        "Accept-Encoding": "gzip",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    resp = requests.post(url, data=payload, headers=headers, timeout=15, verify=False)
+    data = resp.json()
+    return data.get("access_token", "0"), data.get("open_id", "0")
+
+
+def try_parse_login_res(data: bytes):
+    try:
+        msg = FreeFire_pb2.LoginRes()
+        msg.ParseFromString(data)
+        if msg.account_id and msg.account_id > 0:
+            return json.loads(json_format.MessageToJson(msg))
+    except Exception:
+        pass
+    return None
+
+
+def extract_login_res(raw: bytes) -> dict:
+    parsed = try_parse_login_res(raw)
+    if parsed:
+        return parsed
+
+    idx = 0
+    while True:
+        idx = raw.find(b"\x08", idx)
+        if idx == -1:
+            break
+        parsed = try_parse_login_res(raw[idx:])
+        if parsed:
+            return parsed
+        idx += 1
+
+    jwt_marker = raw.find(b"eyJhbGciOiJIUzI1NiIs")
+    if jwt_marker != -1:
+        for i in range(jwt_marker - 1, max(jwt_marker - 300, -1), -1):
+            if raw[i] == 0x42:
+                parsed = try_parse_login_res(raw[i:])
+                if parsed:
+                    return parsed
+                break
+
+    raise Exception(f"Could not parse LoginRes. Raw: {raw[:200]}")
+
+
+def generate_jwt_token(uid: str, password: str):
+    start_time = time.time()
+
+    token_val, open_id = get_access_token(f"uid={uid}&password={password}")
+    if token_val == "0" or open_id == "0":
+        raise Exception("Invalid UID or Password — access token not received")
+
+    body = json.dumps({
+        "open_id": open_id,
+        "open_id_type": "4",
+        "login_token": token_val,
+        "orign_platform_type": "4",
+    })
+    proto_bytes = json_to_proto(body, FreeFire_pb2.LoginReq())
+    payload = aes_cbc_encrypt(MAIN_KEY, MAIN_IV, proto_bytes)
+
+    headers = {
+        "User-Agent": USERAGENT_INFO,
+        "Accept": "*/*",
+        "Accept-Encoding": "deflate, gzip",
+        "X-Ga-Sv": "1789534056",
+        "Authorization": "Bearer",
+        "X-Ga": "v1 1",
+        "Releaseversion": RELEASEVERSION,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Unity-Version": "2018.4.12f1",
+        "PlAy_VeR": "1.132.1",
+        "Ob_VeR": RELEASEVERSION,
+    }
+
+    resp = requests.post(f"https://{MAJOR_HOST}/MajorLogin", data=payload, headers=headers, timeout=15, verify=False)
+    msg = extract_login_res(resp.content)
+
+    elapsed = time.time() - start_time
+
+    return {
+        "access_token": token_val,
+        "open_id": open_id,
+        "real_uid": str(msg.get("accountId", "")),
+        "status": "success",
+        "time": f"{elapsed:.2f}s",
+        "token": f"Bearer {msg.get('token', '')}",
+        "server_url": msg.get("serverUrl", ""),
+        "region": msg.get("lockRegion", ""),
+    }
+
+
+def get_token_cached():
+    cached = _token_cache.get("main")
+    if cached and cached.get("expires_at", 0) > time.time():
+        return cached
+
+    data = generate_jwt_token(JWT_ACCOUNT["uid"], JWT_ACCOUNT["password"])
+    token_info = {
+        "token": data["token"],
+        "server_url": data.get("server_url") or "https://clientbp.ppmainecoonghj.com",
+        "region": data.get("region") or REGION,
+        "expires_at": time.time() + 25200,
+    }
+    _token_cache["main"] = token_info
+    return token_info
+
+
+def json_to_proto(json_data: str, proto_message) -> bytes:
+    json_format.ParseDict(json.loads(json_data), proto_message)
+    return proto_message.SerializeToString()
+
+
+def get_item_name(item_id):
+    if not item_id or item_id in ("0", 0):
+        return "N/A"
+    try:
+        r = requests.get(f"https://api.danger.workers.dev/item/{item_id}", timeout=3)
+        if r.status_code == 200:
+            return r.json().get("name", str(item_id))
+        return str(item_id)
+    except Exception:
+        return str(item_id)
+
+
+def get_rank_name(rp):
+    try:
+        rp = int(rp)
+    except Exception:
+        return "N/A"
+    if rp == 0: return "Bronze I"
+    if rp < 100: return "Bronze II"
+    if rp < 200: return "Bronze III"
+    if rp < 300: return "Silver I"
+    if rp < 400: return "Silver II"
+    if rp < 500: return "Silver III"
+    if rp < 600: return "Gold I"
+    if rp < 700: return "Gold II"
+    if rp < 800: return "Gold III"
+    if rp < 900: return "Platinum I"
+    if rp < 1000: return "Platinum II"
+    if rp < 1100: return "Platinum III"
+    if rp < 1200: return "Diamond I"
+    if rp < 1300: return "Diamond II"
+    if rp < 1400: return "Diamond III"
+    if rp < 1500: return "Heroic"
+    if rp < 2000: return "Master"
+    return "Grandmaster"
+
+
+def ts_to_bst(ts):
+    try:
+        dt = datetime.fromtimestamp(int(ts)) + timedelta(hours=6)
+        return dt.strftime("%d %b %Y at %I:%M:%S %p") + " (BST)"
+    except Exception:
+        return "N/A"
+
+
+def fetch_account_info(uid: int):
+    token_info = get_token_cached()
+    token = token_info["token"]
+    server_url = token_info["server_url"]
+
+    payload = json_to_proto(
+        json.dumps({"a": uid, "b": 7}),
+        main_pb2.GetPlayerPersonalShow()
+    )
+    data_enc = aes_cbc_encrypt(MAIN_KEY, MAIN_IV, payload)
+
+    headers = {
+        "User-Agent": USERAGENT_INFO,
+        "Connection": "Keep-Alive",
+        "Accept-Encoding": "gzip",
+        "Content-Type": "application/octet-stream",
+        "Authorization": token,
+        "X-Unity-Version": "2018.4.11f1",
+        "X-GA": "v1 1",
+        "ReleaseVersion": RELEASEVERSION,
+    }
+
+    resp = requests.post(
+        server_url.rstrip("/") + "/GetPlayerPersonalShow",
+        data=data_enc, headers=headers, timeout=15, verify=False
+    )
+    if resp.status_code != 200:
+        return None
+
+    info = AccountPersonalShow_pb2.AccountPersonalShowInfo()
+    info.ParseFromString(resp.content)
+    result = json.loads(json_format.MessageToJson(info))
+    result["region"] = token_info.get("region", REGION)
+    return result
+
+
+def build_info_response(uid: str, account_data: dict):
+    basic   = account_data.get("basicInfo", {}) or {}
+    clan    = account_data.get("clanBasicInfo", {}) or {}
+    social  = account_data.get("socialInfo", {}) or {}
+    pet     = account_data.get("petInfo", {}) or {}
+    captain = account_data.get("captainBasicInfo", {}) or {}
+    credit  = account_data.get("creditScoreInfo", {}) or {}
+
+    prime_level = "N/A"
+    pd = basic.get("primeLevel")
+    if isinstance(pd, dict):
+        prime_level = pd.get("level", "N/A")
+    elif pd is not None:
+        prime_level = str(pd)
+
+    return {
+        "status": "success",
+        "server_used": account_data.get("region", REGION),
+        "BasicInformation": {
+            "PrimeLevel": prime_level,
+            "Name": basic.get("nickname", "N/A"),
+            "UID": uid,
+            "Level": basic.get("level", "N/A"),
+            "Exp": basic.get("exp", "N/A"),
+            "Region": basic.get("region", "N/A"),
+            "Likes": basic.get("liked", "N/A"),
+            "HonorScore": credit.get("creditScore", "N/A"),
+            "CelebrityStatus": "Yes" if basic.get("showBrRank") else "No",
+            "Title": get_item_name(basic.get("title", "0")),
+            "Signature": social.get("signature", "N/A"),
+        },
+        "ActivityInformation": {
+            "MostRecentOB": basic.get("releaseVersion", "N/A"),
+            "BooyahPass": "Yes" if basic.get("hasElitePass") else "No",
+            "CurrentBpBadges": basic.get("badgeCnt", "N/A"),
+            "BRRank": get_rank_name(basic.get("rankingPoints", 0)),
+            "BRPoints": basic.get("rankingPoints", 0),
+            "ShowBRRank": "True" if basic.get("showBrRank") else "False",
+            "ShowCSRank": "True" if basic.get("showCsRank") else "False",
+            "CreatedAt": ts_to_bst(basic.get("createAt", 0)),
+            "LastLogin": ts_to_bst(basic.get("lastLoginAt", 0)),
+        },
+        "GuildInformation": {
+            "GuildName": clan.get("clanName", "No Guild"),
+            "GuildID": clan.get("clanId", "N/A"),
+            "GuildLevel": clan.get("clanLevel", "N/A"),
+            "LiveMembers": clan.get("memberNum", "N/A"),
+            "MaxMembers": clan.get("capacity", "N/A"),
+        },
+        "PetDetails": {
+            "Equipped": "Yes" if pet.get("isSelected") else "No",
+            "PetNick": pet.get("name", "N/A"),
+            "PetType": get_item_name(pet.get("id", "0")),
+            "PetSkill": get_item_name(pet.get("selectedSkillId", "0")),
+            "PetSkin": get_item_name(pet.get("skinId", "0")),
+            "PetExp": pet.get("exp", "N/A"),
+            "PetLevel": pet.get("level", "N/A"),
+        },
+        "LeaderInformation": {
+            "Name": captain.get("nickname", "N/A"),
+            "UID": captain.get("accountId", "N/A"),
+            "Level": captain.get("level", "N/A"),
+            "Region": captain.get("region", "N/A"),
+            "BooyahPass": "Yes" if captain.get("hasElitePass") else "No",
+            "BRRank": get_rank_name(captain.get("rankingPoints", 0)),
+            "BRPoints": captain.get("rankingPoints", 0),
+        },
+    }
 
 
 # ============ TELEGRAM ============
@@ -626,10 +930,12 @@ def update_api_key_usage(api_key, kind="generate"):
 def home():
     return jsonify({
         "success": True,
-        "message": "Account Generator API",
+        "message": "FreeFire API — Generate + Info + Token",
         "version": "2.0",
         "endpoints": {
             "generate": "/generate?key=YOUR_KEY",
+            "info":     "/info?key=YOUR_KEY&uid=UID",
+            "token":    "/token?uid=UID&password=PASSWORD",
             "status":   "/status?key=YOUR_KEY"
         }
     })
@@ -687,6 +993,78 @@ def generate():
         }), 500
 
 
+@app.route('/info', methods=['GET', 'POST'])
+def info():
+    if not PB2_OK:
+        return jsonify({
+            "success": False,
+            "message": "pb2 files not found. Letakkan FreeFire_pb2.py, "
+                       "AccountPersonalShow_pb2.py, main_pb2.py di folder yang sama."
+        }), 500
+
+    if request.method == 'GET':
+        api_key = request.args.get('key') or request.args.get('api_key')
+        uid     = request.args.get('uid')
+    else:
+        if request.is_json:
+            body    = request.json or {}
+            api_key = body.get('key') or body.get('api_key')
+            uid     = body.get('uid')
+        else:
+            api_key = request.form.get('key') or request.form.get('api_key')
+            uid     = request.form.get('uid')
+
+    if not api_key:
+        return jsonify({"success": False, "message": "API key required. Use ?key=YOUR_KEY"}), 401
+    if not uid:
+        return jsonify({"success": False, "message": "UID required. Use &uid=UID"}), 400
+
+    try:
+        uid_int = int(uid)
+    except Exception:
+        return jsonify({"success": False, "message": "Invalid UID"}), 400
+
+    valid, msg, _ = check_api_key(api_key, "info")
+    if not valid:
+        return jsonify({"success": False, "message": msg}), 429
+
+    try:
+        account_data = fetch_account_info(uid_int)
+        if not account_data:
+            return jsonify({"success": False, "message": "Player not found"}), 404
+
+        update_api_key_usage(api_key, "info")
+        return jsonify(build_info_response(str(uid_int), account_data))
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Failed to fetch info: {str(e)}"}), 500
+
+
+@app.route('/token', methods=['GET'])
+def token_route():
+    if not PB2_OK:
+        return jsonify({
+            "status": "error",
+            "error": "pb2 files not found. Letakkan FreeFire_pb2.py, "
+                     "AccountPersonalShow_pb2.py, main_pb2.py di folder yang sama."
+        }), 500
+
+    uid      = request.args.get('uid')
+    password = request.args.get('password')
+    if not uid or not password:
+        return jsonify({
+            "status": "error",
+            "error": "Both uid and password parameters are required"
+        }), 400
+    try:
+        data = generate_jwt_token(uid, password)
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": f"Failed to generate token: {str(e)}"
+        }), 500
+
+
 @app.route('/status', methods=['GET'])
 def status():
     api_key = request.args.get('key') or request.args.get('api_key')
@@ -709,6 +1087,11 @@ def status():
             "limit": kd["limit"],
             "used": kd["used"],
             "remaining": kd["limit"] - kd["used"],
+        },
+        "info": {
+            "limit": kd["info_limit"],
+            "used": kd["info_used"],
+            "remaining": kd["info_limit"] - kd["info_used"],
         }
     })
 
