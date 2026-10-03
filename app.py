@@ -16,7 +16,6 @@ import codecs
 import base64
 import hmac
 import hashlib
-import asyncio
 from datetime import datetime, timedelta
 
 import httpx
@@ -42,11 +41,10 @@ OWNER_ID = 8660700322
 CHANNEL_PROMO = "@dindingijo"
 
 # ============ KONFIGURASI API KEYS ============
-# limit = generate, info_limit = /info  (sama kan saja)
 API_KEYS = {
-    "FREE_KEY_001":      {"limit": 50,     "used": 0, "info_limit": 50,     "info_used": 0, "last_reset_day": 0},
-    "VIP_KEY_001":       {"limit": 500,    "used": 0, "info_limit": 500,    "info_used": 0, "last_reset_day": 0},
-    "UNLIMITED_001":     {"limit": 999999, "used": 0, "info_limit": 999999, "info_used": 0, "last_reset_day": 0},
+    "FREE_KEY_001":  {"limit": 50,     "used": 0, "info_limit": 50,     "info_used": 0, "last_reset_day": 0},
+    "VIP_KEY_001":   {"limit": 500,    "used": 0, "info_limit": 500,    "info_used": 0, "last_reset_day": 0},
+    "UNLIMITED_001": {"limit": 999999, "used": 0, "info_limit": 999999, "info_used": 0, "last_reset_day": 0},
 }
 
 # ============ KONFIGURASI GENERATOR ============
@@ -64,6 +62,12 @@ REGION_MAP = {
     9: {"code": "CIS", "name": "RUSSIA",      "lang": "ru", "host": "loginbp.ppmainecoonghj.com"},
     10:{"code": "SAC", "name": "SPAIN",       "lang": "es", "host": "loginbp.ppmainecoonghj.com"},
     11:{"code": "BR",  "name": "BRAZIL",      "lang": "pt", "host": "loginbp.ppmainecoonghj.com"},
+    12:{"code": "KH",  "name": "CAMBODIA",    "lang": "km", "host": "loginbp.ppmainecoonghj.com"},
+    13:{"code": "KR",  "name": "KOREA",       "lang": "ko", "host": "loginbp.ppmainecoonghj.com"},
+    14:{"code": "CN",  "name": "CHINA",       "lang": "zh", "host": "loginbp.ppmainecoonghj.com"},
+    15:{"code": "MM",  "name": "MYANMAR",     "lang": "my", "host": "loginbp.ppmainecoonghj.com"},
+    16:{"code": "LA",  "name": "LAOS",        "lang": "lo", "host": "loginbp.ppmainecoonghj.com"},
+    17:{"code": "JP",  "name": "JAPAN",       "lang": "ja", "host": "loginbp.ppmainecoonghj.com"},
 }
 
 SELECTED    = REGION_MAP.get(REGION_CHOICE, REGION_MAP[1])
@@ -72,18 +76,175 @@ REGION_NAME = SELECTED["name"]
 LANG        = SELECTED["lang"]
 MAJOR_HOST  = SELECTED["host"]
 
-NAME_PREFIX = "Ccang"
+
+# ============================================================
+#  SUFFIX NAMA ASLI PER BAHASA
+#  Prefix selalu "Ccang" (5 huruf latin), lalu tambah
+#  karakter asli dari bahasa tsb + angka, total ~10-11 karakter.
+#
+#  Contoh hasil:
+#    - id: CcangPermata78
+#    - km: Ccangស្រី4521     (ស្រី = perempuan)
+#    - vi: CcangHồng9182     (Hồng = merah muda)
+#    - ko: Ccang지훈5520     (지훈 = nama umum)
+#    - zh: Ccang小龙6712     (小龙 = naga kecil)
+#    - ja: Ccangさくら3421   (さくら = sakura)
+#    - th: Ccangน้ำฟ้า9134   (น้ำฟ้า = langit biru)
+# ============================================================
+
+NAME_SUFFIXES = {
+    # ── Indonesia — kata umum ────────────────────────────────
+    "id": [
+        "Permata", "Bintang", "Melati", "Cahaya", "Pelangi",
+        "Kencana", "Bunga", "Anggrek", "Mutiara", "Langit",
+        "Petir", "Garuda", "Rajawali", "Nusantara", "Merdeka",
+    ],
+    # ── Vietnam — kata umum ──────────────────────────────────
+    "vi": [
+        "Hồng", "Mai", "Lan", "Hương", "Yến",
+        "Tùng", "Dũng", "Hùng", "Anh", "Linh",
+        "Ngọc", "Bảo", "Kim", "Thanh", "Phương",
+    ],
+    # ── Korea — nama umum Hangul ─────────────────────────────
+    "ko": [
+        "지훈", "민준", "서준", "도윤", "예준",
+        "시우", "하준", "주원", "지호", "건우",
+        "서연", "지우", "하윤", "민서", "서윤",
+    ],
+    # ── China — nama umum Hanzi ──────────────────────────────
+    "zh": [
+        "小龙", "天龙", "大鱼", "无双", "雷霆",
+        "烈焰", "风暴", "冰霜", "黑豹", "紫电",
+        "玄武", "朱雀", "白虎", "青龙", "破晓",
+    ],
+    # ── Jepang — Hiragana / Katakana ─────────────────────────
+    "ja": [
+        "さくら", "ゆうき", "はると", "ひかり", "たける",
+        "つばさ", "みなと", "りく", "そら", "ゆづき",
+        "レオン", "カイト", "リン", "ハル", "ソラ",
+    ],
+    # ── Thailand — karakter Thai ─────────────────────────────
+    "th": [
+        "น้ำฟ้า", "สายลม", "ตะวัน", "เดือน", "จันทร์",
+        "ดาว", "นภา", " orchid", "ปลา", "มังกร",
+        "ไทย", "รัก", "เพชร", "ทอง", "เงิน",
+    ],
+    # ── Khmer (Kamboja) — karakter Khmer ─────────────────────
+    "km": [
+        "ស្រី", "ព្រះ", "ចន្ទ", "ផ្កាយ", "ទឹក",
+        "ភ្នំ", "ព្រៃ", "ខ្យល់", "ភ្លើង", "ដី",
+        "ស្នេហ៍", "កូន", "មាស", "ពេជ្រ", "ព្រះចន្ទ",
+    ],
+    # ── Laos — karakter Lao ──────────────────────────────────
+    "lo": [
+        "ດາວ", "ຈັນ", "ຟ້າ", "ນ້ຳ", "ໄຟ",
+        "ປ່າ", "ພູ", "ລົມ", "ຄຳ", "ເງິນ",
+    ],
+    # ── Myanmar — karakter Myanmar ───────────────────────────
+    "my": [
+        "ပန်း", "နေ", "လ", "ကြယ်", "တောင်",
+        "မြစ်", "လေ", "မီး", "ရွှေ", "ငွေ",
+    ],
+    # ── Arab — karakter Arab ─────────────────────────────────
+    "ar": [
+        "نجم", "قمر", "شمس", "سماء", "بحر",
+        "نار", "ريح", "ذهب", "فضة", "أسد",
+    ],
+    # ── Hindi — karakter Devanagari ──────────────────────────
+    "hi": [
+        "तारा", "चाँद", "सूरज", "आसमान", "समुंदर",
+        "आग", "हवा", "सोना", "चांदी", "शेर",
+    ],
+    # ── Bengali ──────────────────────────────────────────────
+    "bn": [
+        "তারা", "চাঁদ", "সূর্য", "আকাশ", "সমুদ্র",
+        "আগুন", "বাতাস", "সোনা", "রূপা", "সিংহ",
+    ],
+    # ── Urdu ─────────────────────────────────────────────────
+    "ur": [
+        "ستارہ", "چاند", "سورج", "آسمان", "سمندر",
+        "آگ", "ہوا", "سونا", "چاندی", "شیر",
+    ],
+    # ── Russia — Cyrillic ────────────────────────────────────
+    "ru": [
+        "Звезда", "Луна", "Солнце", "Небо", "Море",
+        "Огонь", "Ветер", "Золото", "Серебро", "Лев",
+    ],
+    # ── Spanyol ──────────────────────────────────────────────
+    "es": [
+        "Estrella", "Luna", "Sol", "Cielo", "Mar",
+        "Fuego", "Viento", "Oro", "Plata", "Leon",
+    ],
+    # ── Portugis ─────────────────────────────────────────────
+    "pt": [
+        "Estrela", "Lua", "Sol", "Ceu", "Mar",
+        "Fogo", "Vento", "Ouro", "Prata", "Leao",
+    ],
+    # ── Inggris (fallback) ───────────────────────────────────
+    "en": [
+        "Star", "Moon", "Sun", "Sky", "Sea",
+        "Fire", "Wind", "Gold", "Silver", "Lion",
+    ],
+}
+
+DEFAULT_SUFFIXES = ["Star", "Moon", "Sun", "Sky", "Fire"]
+
+
+def _char_len(s: str) -> int:
+    """Hitung panjang karakter Unicode (bukan byte)."""
+    return len(s)
+
+
+def generate_name(lang: str = None, max_len: int = 11) -> str:
+    """
+    Buat nama: 'Ccang' (5 char) + suffix bahasa asli + angka.
+    Total ≤ max_len (default 11).
+    Contoh:
+      - km: 'Ccangស្រី4521'   (5 + 5 + 4 = 14? → dipotong sesuai)
+      - ko: 'Ccang지훈5520'   (5 + 2 + 4 = 11) ✓
+      - zh: 'Ccang小龙6712'   (5 + 2 + 4 = 11) ✓
+      - ja: 'Ccangさくら3421' (5 + 3 + 4 = 12? → dipotong)
+    """
+    lang = lang or LANG
+    suffixes = NAME_SUFFIXES.get(lang) or DEFAULT_SUFFIXES
+
+    base = "Ccang"
+
+    # Hitung sisa slot untuk suffix + angka
+    # Minimal 3 digit angka, sisa untuk suffix
+    for _ in range(10):
+        sfx = random.choice(suffixes)
+        base_len = _char_len(base)
+        sfx_len  = _char_len(sfx)
+
+        # angka 3-4 digit
+        num_len = 4 if random.random() < 0.5 else 3
+
+        total = base_len + sfx_len + num_len
+        if total <= max_len:
+            num = random.randint(10 ** (num_len - 1), 10 ** num_len - 1)
+            return f"{base}{sfx}{num}"
+
+        # kalau kepanjangan, coba potong suffix
+        allowed = max_len - base_len - num_len
+        if allowed >= 1:
+            sfx = sfx[:allowed]
+            num = random.randint(10 ** (num_len - 1), 10 ** num_len - 1)
+            return f"{base}{sfx}{num}"
+
+    # fallback: pakai latin
+    return f"{base}{random.randint(1000, 9999)}"
+
+
 PASS_PREFIX = "NewApiGenByCcang"
 
 HEX_KEY = "2ee44819e9b4598845141067b281621874d0d5d7af9d8f7e00c1e54715b7d1e3"
 AES_KEY = bytes([89, 103, 38, 116, 99, 37, 68, 69, 117, 104, 54, 37, 90, 99, 94, 56])
 AES_IV  = bytes([54, 111, 121, 90, 68, 114, 50, 50, 69, 51, 121, 99, 104, 106, 77, 37])
 
-# AES key/iv untuk MajorLogin (info / jwt)
 MAIN_KEY = b'Yg&tc%DEuh6%Zc^8'
 MAIN_IV  = b'6oyZDr22E3ychjM%'
 
-# Datadome cookies (untuk bypass registrasi)
 DATADOME_COOKIE_REG = "datadome=oYpIhVco_RFvLHe_T9KFd5wuY0gcQuNfrlt4rHJY5QOkwv4TGt8gPMK32MbHuBdzJyfXnXlfzNZT_2tHr2kys8AMYT2~T71QP1S78_7Pdx4JLOXdSrflPT6cOX2vsyJh"
 DATADOME_COOKIE_TOK = "datadome=y23Z3X17pgkMHEt5zY8dqxC6BIf7WJMgC0RXNbqifHT7t9zajKe_hegFb1Ie9_7JixXpz7FRGVodOn~mWPk_NrqIIhUOXDYqKOahzoRQcyEy77GWEMcdA9_MqPJeM5qv"
 DEVICE_ID = "02-344afb0e-593c-40b7-92f2-171972f74807"
@@ -99,24 +260,20 @@ WAF_UAS = [
 USERAGENT_INFO = "Dalvik/2.1.0 (Linux; U; Android 14; CPH2095 Build/RKQ1.211119.001)"
 RELEASEVERSION = "OB55"
 
-# ============ AKUN UNTUK JWT (SIAM_CODEX style) ============
-# Dipakai untuk /info. Bisa diganti sendiri.
 JWT_ACCOUNT = {
     "uid": "7742406516",
     "password": "507D3250C779A4E73A74B66998E99DD4ED95A6133A07151FC0411A225C405ADD"
 }
 
-# In-memory token cache
 _token_cache = {}
 
-# ============ HTTP CLIENT (pooling) ============
 HTTP_LIMITS = httpx.Limits(max_keepalive_connections=20, max_connections=50)
 HTTP_TIMEOUT = httpx.Timeout(15.0, connect=5.0)
 _http_client = httpx.Client(limits=HTTP_LIMITS, timeout=HTTP_TIMEOUT)
 
 
 # ============================================================
-#  PROTOBUF ENCODER (untuk generator)
+#  PROTOBUF ENCODER
 # ============================================================
 def encode_varint(n):
     if n < 0: return b''
@@ -145,12 +302,10 @@ def build_proto(fields):
 #  AES HELPERS
 # ============================================================
 def aes_encrypt_bytes(data_bytes):
-    cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
-    return cipher.encrypt(pad(data_bytes, AES.block_size))
+    return AES.new(AES_KEY, AES.MODE_CBC, AES_IV).encrypt(pad(data_bytes, AES.block_size))
 
 def encrypt_api(plain_bytes):
-    cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
-    return cipher.encrypt(pad(plain_bytes, AES.block_size))
+    return AES.new(AES_KEY, AES.MODE_CBC, AES_IV).encrypt(pad(plain_bytes, AES.block_size))
 
 def aes_cbc_encrypt(key: bytes, iv: bytes, plaintext: bytes) -> bytes:
     return AES.new(key, AES.MODE_CBC, iv).encrypt(pad(plaintext, AES.block_size))
@@ -195,18 +350,6 @@ def get_random_ip():
 def generate_password():
     return f"{PASS_PREFIX}{''.join(random.choices(string.ascii_uppercase + string.digits, k=6))}"
 
-def generate_name():
-    base = f"{NAME_PREFIX}{random.randint(10, 999)}"
-    syms = ['~','!','@','#','$','%','^','&','*','-','_','+','=']
-    p = random.randint(1, 3)
-    if p == 1:
-        s = random.choice(syms)
-        return f"{s}{base}{s}"
-    elif p == 2:
-        s1, s2 = random.sample(syms, 2)
-        return f"{s1}{s2}{base}"
-    return base
-
 def decode_jwt_payload(jwt_token):
     try:
         parts = jwt_token.split(".")
@@ -225,18 +368,14 @@ def obfuscate_open_id(open_id):
         0x30,0x30,0x30,0x30,0x30,0x32,0x30,0x31,
         0x37,0x30,0x30,0x30,0x30,0x30,0x32,0x30
     ]
-    encoded = ''.join(
-        chr(ord(open_id[i]) ^ keystream[i % len(keystream)])
+    return bytes(
+        ord(open_id[i]) ^ keystream[i % len(keystream)]
         for i in range(len(open_id))
     )
-    return codecs.decode(
-        encoded.encode('unicode_escape').decode('utf-8'),
-        'unicode_escape'
-    ).encode('latin1')
 
 
 # ============================================================
-#  JWT / TOKEN HELPERS (untuk /info & /token)
+#  JWT / TOKEN HELPERS
 # ============================================================
 def get_access_token(account: str):
     url = "https://ffmconnect.live.gop.garenanow.com/oauth/guest/token/grant"
@@ -339,7 +478,6 @@ def generate_jwt_token(uid: str, password: str):
 
 
 def get_token_cached():
-    """Ambil token dari cache, atau generate baru pakai JWT_ACCOUNT."""
     cached = _token_cache.get("main")
     if cached and cached.get("expires_at", 0) > time.time():
         return cached
@@ -349,14 +487,14 @@ def get_token_cached():
         "token": data["token"],
         "server_url": data.get("server_url") or f"https://clientbp.ppmainecoonghj.com",
         "region": data.get("region") or REGION,
-        "expires_at": time.time() + 25200,  # 7 jam
+        "expires_at": time.time() + 25200,
     }
     _token_cache["main"] = token_info
     return token_info
 
 
 # ============================================================
-#  GENERATOR (dari Project 1)
+#  GENERATOR (flow utama)
 # ============================================================
 def generate_one_account(max_retry=5):
     for _ in range(max_retry):
@@ -439,11 +577,11 @@ def generate_one_account(max_retry=5):
             open_id      = tok_json['data']['open_id']
             time.sleep(0.05)
 
-            # STEP 3 — OBFUSCATE
+            # STEP 3 — XOR open_id
             field = obfuscate_open_id(open_id)
 
             # STEP 4 — MAJOR REGISTER
-            name = generate_name()
+            name = generate_name(LANG)
             proto = build_proto({
                 1: name, 2: access_token, 3: open_id,
                 5: 102000007, 6: 4, 7: 1, 13: 1,
@@ -530,7 +668,7 @@ def generate_one_account(max_retry=5):
 
 
 # ============================================================
-#  INFO ACCOUNT (pakai protobuf)
+#  INFO ACCOUNT
 # ============================================================
 def get_item_name(item_id):
     if not item_id or item_id in ("0", 0):
@@ -578,7 +716,6 @@ def ts_to_bst(ts):
 
 
 def fetch_account_info(uid: int):
-    """Query info akun pakai token dari cache."""
     token_info = get_token_cached()
     token = token_info["token"]
     server_url = token_info["server_url"]
@@ -735,7 +872,6 @@ def home():
     })
 
 
-# ---------- /generate ----------
 @app.route('/generate', methods=['GET', 'POST'])
 def generate():
     api_key = None
@@ -770,6 +906,7 @@ def generate():
                     "account_id": result["account_id"],
                     "uid": str(result["uid"]),
                     "password": result["password"],
+                    "name": result["name"],
                     "region": result["region"],
                     "region_code": result["region_code"],
                     "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -781,7 +918,6 @@ def generate():
         return jsonify({"success": False, "message": "Internal server error"}), 500
 
 
-# ---------- /info ----------
 @app.route('/info', methods=['GET', 'POST'])
 def info():
     if request.method == 'GET':
@@ -821,7 +957,6 @@ def info():
         return jsonify({"success": False, "message": f"Failed to fetch info: {str(e)}"}), 500
 
 
-# ---------- /token ----------
 @app.route('/token', methods=['GET'])
 def token_route():
     uid      = request.args.get('uid')
@@ -841,7 +976,6 @@ def token_route():
         }), 500
 
 
-# ---------- /status ----------
 @app.route('/status', methods=['GET'])
 def status():
     api_key = request.args.get('key') or request.args.get('api_key')
