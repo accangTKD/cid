@@ -1,4 +1,4 @@
-# app.py
+# app.py — FULL WORK
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -21,34 +21,24 @@ from Crypto.Util.Padding import pad
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-# ── optional: pb2 untuk info/token (kalau ada) ────────────────────────
-try:
-    from google.protobuf import json_format
-    import FreeFire_pb2
-    import AccountPersonalShow_pb2
-    import main_pb2
-    PB2_OK = True
-except Exception:
-    PB2_OK = False
-
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 app = Flask(__name__)
 CORS(app)
 
-# ============ KONFIGURASI TELEGRAM ============
+# ============ TELEGRAM ============
 BOT_TOKEN     = "8965307683:AAGXwuIge4QKuYXtrkXhG4AahxDrynqi7SY"
 OWNER_ID      = 8660700322
 CHANNEL_PROMO = "@dindingijo"
 
-# ============ KONFIGURASI API KEYS ============
+# ============ API KEYS ============
 API_KEYS = {
     "FREE_KEY_001":  {"limit": 50,     "used": 0, "info_limit": 50,     "info_used": 0, "last_reset_day": 0},
     "VIP_KEY_001":   {"limit": 500,    "used": 0, "info_limit": 500,    "info_used": 0, "last_reset_day": 0},
     "UNLIMITED_001": {"limit": 999999, "used": 0, "info_limit": 999999, "info_used": 0, "last_reset_day": 0},
 }
 
-# ============ KONFIGURASI REGION ============
+# ============ REGION ============
 REGION_CHOICE = 1
 REGION_MAP = {
     1: {"code": "ID",  "name": "INDONESIA",   "lang": "id", "host": "loginbp.ppmainecoonghj.com"},
@@ -61,7 +51,7 @@ REGION_MAP = {
     8: {"code": "TW",  "name": "TAIWAN",      "lang": "zh", "host": "loginbp.ppmainecoonghj.com"},
     9: {"code": "CIS", "name": "RUSSIA",      "lang": "ru", "host": "loginbp.ppmainecoonghj.com"},
     10:{"code": "SAC", "name": "SPAIN",       "lang": "es", "host": "loginbp.ppmainecoonghj.com"},
-    11:{"code": "BR",  "name": "BRAZIL",      "lang": "pt", "host": "loginbp.ppmainecoonghj.com"}
+    11:{"code": "BR",  "name": "BRAZIL",      "lang": "pt", "host": "loginbp.ppmainecoonghj.com"},
 }
 SELECTED    = REGION_MAP.get(REGION_CHOICE, REGION_MAP[1])
 REGION      = SELECTED["code"]
@@ -106,7 +96,7 @@ MAX_RETRIES     = 3
 RETRY_DELAY     = 1
 RATE_LIMIT_WAIT = 30
 
-# ============ KARAKTER UNICODE ============
+# ============ KARAKTER UNICODE (VN / KR / CN / JP / TH) ============
 CHARS_VN = list("ăâđêôơưĂÂĐÊÔƠƯáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệ"
                 "íìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ")
 CHARS_KR = list("가나다라마바사아자차카타파하고노도로모보소오조초코토포호"
@@ -121,13 +111,14 @@ CHAR_GROUPS = {"vn": CHARS_VN, "kr": CHARS_KR, "cn": CHARS_CN, "jp": CHARS_JP, "
 ALL_GROUPS  = list(CHAR_GROUPS.values())
 ALL_CHARS   = CHARS_VN + CHARS_KR + CHARS_CN + CHARS_JP + CHARS_TH
 
-# ============ NAME & PASSWORD GENERATOR ============
+
+# ============ NAME GENERATOR (Ccang + unicode, 7-11 code-point) ============
 def make_name() -> str:
     CORE = "Ccang"
     target_total = random.randint(7, 11)
     extra = target_total - len(CORE)
 
-    for _ in range(40):
+    for _ in range(60):
         if extra == 1:
             pre_len, suf_len = 0, 1
         else:
@@ -153,20 +144,25 @@ def make_name() -> str:
     suf = random.choice(random.choice(ALL_GROUPS))
     return f"{pre}Ccang{suf}"
 
+
 def make_password() -> str:
     g1, g2 = random.sample(ALL_GROUPS, k=2)
     suffix = random.choice(g1) + random.choice(g2)
     return f"Generator@ByAccang{suffix}"
 
+
 def random_username() -> str:
     return "id" + "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12)) + "cang"
+
 
 # ============ AES & HMAC ============
 def aes_encrypt(data: bytes) -> bytes:
     return AES.new(AES_KEY, AES.MODE_CBC, AES_IV).encrypt(pad(data, AES.block_size))
 
+
 def make_signature(payload: str) -> str:
     return hmac.new(AUTH_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
 
 # ============ PROTOBUF ============
 def _encode_varint(n: int) -> bytes:
@@ -183,6 +179,7 @@ def _encode_varint(n: int) -> bytes:
             break
     return bytes(out)
 
+
 def _encode_field(field: int, value) -> bytes:
     if isinstance(value, bool):
         value = int(value)
@@ -193,8 +190,10 @@ def _encode_field(field: int, value) -> bytes:
         return _encode_varint((field << 3) | 2) + _encode_varint(len(raw)) + raw
     return b""
 
+
 def assemble_proto(fields: dict) -> bytes:
     return b"".join(_encode_field(k, v) for k, v in fields.items())
+
 
 def parse_proto(data: bytes) -> dict:
     out = {}
@@ -238,6 +237,7 @@ def parse_proto(data: bytes) -> dict:
             break
     return out
 
+
 # ============ OPENID XOR ============
 _OPENID_XOR_KEY = bytes([
     0x30,0x30,0x30,0x32,0x30,0x31,0x37,0x30,
@@ -246,13 +246,16 @@ _OPENID_XOR_KEY = bytes([
     0x37,0x30,0x30,0x30,0x30,0x30,0x32,0x30,
 ])
 
+
 def xor_open_id(open_id: str) -> bytes:
     return bytes(ord(open_id[i]) ^ _OPENID_XOR_KEY[i % len(_OPENID_XOR_KEY)] for i in range(len(open_id)))
+
 
 def random_ip() -> str:
     return f"{random.randint(1,255)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,255)}"
 
-# ============ GUEST REGISTER + TOKEN ============
+
+# ============ GUEST REGISTER + TOKEN GRANT ============
 def create_guest_account(max_retries: int = MAX_RETRIES):
     for _ in range(max_retries):
         try:
@@ -329,6 +332,7 @@ def create_guest_account(max_retries: int = MAX_RETRIES):
             time.sleep(RETRY_DELAY)
     return None
 
+
 # ============ MAJOR REGISTER ============
 FIELD_22_HEX = (
     "474752450101010062020000a78910bd098e3ff2e4345d59a31db114ea088f37e32e65"
@@ -357,6 +361,7 @@ FIELD_94_STR = (
     "KqsHT+UrR1HKqb6+1db+Ofei+NtZr2+hbiBo3yKDL8w+8E3S5qF2IgEEe1fFQFyHRzl4"
     "iyHjHp+QsfeLbjJ6+DidTiKxm0ak2uYYa6QR4nAUdlZR"
 )
+
 
 def send_major_register(session, name, access_token, open_id):
     fields = {
@@ -395,6 +400,7 @@ def send_major_register(session, name, access_token, open_id):
         raise Exception(f"MajorRegister HTTP {resp.status_code}: {resp.text}")
     return parse_proto(resp.content)
 
+
 def major_register(session, access_token, open_id, name):
     try:
         result = send_major_register(session, name, access_token, open_id)
@@ -411,40 +417,75 @@ def major_register(session, access_token, open_id, name):
             return {"ok": False, "real_uid": None, "reason": "rate_limit"}
         return {"ok": False, "real_uid": None, "reason": f"exception: {msg}"}
 
+
 # ============ MAJOR LOGIN ============
 def build_major_login_fields(access_token, open_id):
     return {
         3:  time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-        4:  "free fire", 5: 1, 7: "2.133.9",
+        4:  "free fire",
+        5:  1,
+        7:  "2.133.9",
         8:  "Android OS 10 / API-29 (QP1A.190711.020/1617006012)",
-        9:  "Handheld", 10: "Vi India", 11: "WIFI",
-        12: 1600, 13: 720, 14: "320",
+        9:  "Handheld",
+        10: "Vi India",
+        11: "WIFI",
+        12: 1600,
+        13: 720,
+        14: "320",
         15: "ARM64 FP ASIMD AES | 2301 | 8",
-        16: 2799, 17: "PowerVR Rogue GE8320",
+        16: 2799,
+        17: "PowerVR Rogue GE8320",
         18: "OpenGL ES 3.2 build 1.11@5425693",
         19: "Google|9f7d6b8b-b10c-454a-852d-06332cd498eb",
-        20: "151.158.158.220", 21: "en",
-        22: access_token, 23: "4", 24: "Handheld",
-        25: "realme RMX2189", 26: "SG",
+        20: "151.158.158.220",
+        21: "en",
+        22: access_token,
+        23: "4",
+        24: "Handheld",
+        25: "realme RMX2189",
+        26: "SG",
         29: "9892ee38a1d1e2fdbc069b357a754a8c885145af7d32eac25ef81b072595d123",
-        30: 1, 41: "Vi India", 42: "WIFI",
+        30: 1,
+        41: "Vi India",
+        42: "WIFI",
         57: "1ac4b80ecf0478a44203bf8fac6120f5",
-        60: 19799, 61: 2536, 62: 5056, 64: 2768, 65: 19999,
-        66: 2536, 67: 19799, 73: 1,
+        60: 19799,
+        61: 2536,
+        62: 5056,
+        64: 2768,
+        65: 19999,
+        66: 2536,
+        67: 19799,
+        73: 1,
         74: "/data/app/com.dts.freefiremax-ShI7E0dK8p1IiZ785pvuVQ==/lib/arm64",
         76: 2,
-        77: "38f4751a330688ab124c2c804cec90a5|/data/app/com.dts.freefiremax-ShI7E0dK8p1IiZ785pvuVQ==/base.apk",
-        78: 2, 79: 2, 81: "64", 83: "2019118527",
-        86: "OpenGLES3", 87: 3071, 88: 4, 92: 67920,
-        93: "android_max", 94: FIELD_94_STR, 95: 111107,
+        77: "38f4751a330688ab124c2c804cec90a5|"
+            "/data/app/com.dts.freefiremax-ShI7E0dK8p1IiZ785pvuVQ==/base.apk",
+        78: 2,
+        79: 2,
+        81: "64",
+        83: "2019118527",
+        86: "OpenGLES3",
+        87: 3071,
+        88: 4,
+        92: 67920,
+        93: "android_max",
+        94: FIELD_94_STR,
+        95: 111107,
         96: '{"cur_rate":null,"support_etc2":true}',
-        97: 1, 98: 1, 99: "4", 100: "4", 102: "",
-        104: 83812, 105: 1,
+        97: 1,
+        98: 1,
+        99: "4",
+        100: "4",
+        102: "",
+        104: 83812,
+        105: 1,
         106: "https://dl-bs.ggpolarbear.com/live/ABHotUpdates/|"
              "https://core-bs.ggpolarbear.com/live/ABHotUpdates/|"
              "a4332cb1c1a84e51dd77441e4856ed5a",
         107: "1.9393e7b8e53e8aeb",
     }
+
 
 def major_login(session, access_token, open_id):
     try:
@@ -481,6 +522,7 @@ def major_login(session, access_token, open_id):
     except Exception:
         pass
     return None, None
+
 
 # ============ ORKESTRASI ============
 def generate_one_account(max_attempts: int = 10):
@@ -527,6 +569,7 @@ def generate_one_account(max_attempts: int = 10):
             time.sleep(RETRY_DELAY)
     return None
 
+
 # ============ TELEGRAM ============
 def send_to_owner(account_id, uid, password, region_name, api_key, caller_ip):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -550,18 +593,17 @@ def send_to_owner(account_id, uid, password, region_name, api_key, caller_ip):
     except Exception:
         pass
 
-# ============ API KEY MANAGEMENT ============
+
+# ============ API KEY ============
 def check_api_key(api_key, kind="generate"):
     current_day = datetime.now().day
     if api_key not in API_KEYS:
         return False, "Invalid API key", None
-
     kd = API_KEYS[api_key]
     if kd.get("last_reset_day", 0) != current_day:
         kd["used"] = 0
         kd["info_used"] = 0
         kd["last_reset_day"] = current_day
-
     if kind == "generate":
         if kd["used"] >= kd["limit"]:
             return False, f"Daily generate limit reached! Used {kd['used']}/{kd['limit']}", kd
@@ -570,6 +612,7 @@ def check_api_key(api_key, kind="generate"):
             return False, f"Daily info limit reached! Used {kd['info_used']}/{kd['info_limit']}", kd
     return True, "OK", kd
 
+
 def update_api_key_usage(api_key, kind="generate"):
     if api_key in API_KEYS:
         if kind == "generate":
@@ -577,7 +620,8 @@ def update_api_key_usage(api_key, kind="generate"):
         else:
             API_KEYS[api_key]["info_used"] += 1
 
-# ============ FLASK ROUTES ============
+
+# ============ ROUTES ============
 @app.route('/', methods=['GET', 'POST'])
 def home():
     return jsonify({
@@ -590,6 +634,7 @@ def home():
         }
     })
 
+
 @app.route('/generate', methods=['GET', 'POST'])
 def generate():
     api_key = None
@@ -601,7 +646,6 @@ def generate():
         else:
             api_key = request.form.get('key')
 
-    # izinkan tanpa API key (kalau mau bebas, hapus blok if ini)
     if api_key:
         valid, msg, _ = check_api_key(api_key, "generate")
         if not valid:
@@ -642,6 +686,7 @@ def generate():
             "message": f"Internal server error: {str(e)}"
         }), 500
 
+
 @app.route('/status', methods=['GET'])
 def status():
     api_key = request.args.get('key') or request.args.get('api_key')
@@ -666,6 +711,7 @@ def status():
             "remaining": kd["limit"] - kd["used"],
         }
     })
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
